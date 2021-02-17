@@ -84,6 +84,11 @@ type RequestVotesArgs struct {
 	CandidateId int
 }
 
+type VoteReply struct {
+	Term  int
+	Voted bool
+}
+
 func (cm *Consesus) ping(term int) {
 	for _, peerId := range cm.peers {
 		go func(peerId int) {
