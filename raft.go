@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"net/rpc"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -77,7 +77,7 @@ func (cm *Consesus) startElection() {
 	cm.electionResetEvent = time.Now()
 	cm.votedFor = cm.id
 	log.Printf("Node %d became Candidate In term %d, logs %v\n", cm.id, term, cm.logs)
-	cm.ping(term)
+	cm.ping(term, term)
 }
 
 type RequestVotesArgs struct {
@@ -90,7 +90,8 @@ type VoteReply struct {
 	Voted bool
 }
 
-func (cm *Consesus) ping(term int) {
+func (cm *Consesus) ping(term int, currentTerm int) {
+	var votesReceived int32 = 1
 	for _, peerId := range cm.peers {
 		go func(peerId int) {
 			args := RequestVotesArgs{
@@ -105,11 +106,64 @@ func (cm *Consesus) ping(term int) {
 				log.Printf("Received reply %+v from peer %d\n", reply, peerId)
 				if cm.currentState != Candidate {
 					log.Printf("While waiting for reply state changed to %d\n", cm.currentState)
+					return
+				}
+				if reply.Term > currentTerm {
+					log.Printf("Term is out of date %d\n", reply.Term)
+					cm.becomeFollower(reply.Term)
+					return
+				} else if reply.Term == currentTerm {
+					if reply.Voted {
+						votes := int(atomic.AddInt32(&votesReceived, 1))
+						if cm.wonElection(votes) {
+							log.Printf("Node %d won election\n", cm.id)
+							cm.startLeader()
+							return
+						}
+					}
 				}
 			}
-			//TODO:: Finish ping
 		}(peerId)
 	}
+}
+
+//TODO implement
+func (cm *Consesus) sendHeartBeats() {
+
+}
+
+func (cm *Consesus) startLeader() {
+	cm.currentState = Leader
+	log.Printf("become leader , term %d log=%v\n", cm.currentTerm, cm.logs)
+	go func() {
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			cm.sendHeartBeats()
+			<-ticker.C
+			cm.mutex.Lock()
+			if cm.currentState != Leader {
+				log.Printf("Node %d is not a leader anymore\n", cm.id)
+				cm.mutex.Unlock()
+				return
+			}
+			cm.mutex.Unlock()
+		}
+
+	}()
+}
+
+func (cm *Consesus) wonElection(votes int) bool {
+	return votes*2 > len(cm.peers)+1
+}
+
+func (cm *Consesus) becomeFollower(term int) {
+	log.Printf("Become follower with term %d\n", term)
+	cm.currentState = Follower
+	cm.currentTerm = term
+	cm.votedFor = -1
+	cm.electionResetEvent = time.Now()
+	go cm.runElectionTimer()
 }
 
 func (cm *Consesus) cantPing() bool {
