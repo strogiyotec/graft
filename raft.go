@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net/rpc"
 	"sync"
 	"time"
 )
@@ -96,7 +97,16 @@ func (cm *Consesus) ping(term int) {
 				Term:        term,
 				CandidateId: cm.id,
 			}
-			log.Printf("Args %+v", args)
+			var reply VoteReply
+			log.Printf("Sending request to %d %+v\n", peerId, args)
+			if err := cm.server.requestVote(peerId, args, reply); err != nil {
+				cm.mutex.Lock()
+				defer cm.mutex.Unlock()
+				log.Printf("Received reply %+v from peer %d\n", reply, peerId)
+				if cm.currentState != Candidate {
+					log.Printf("While waiting for reply state changed to %d\n", cm.currentState)
+				}
+			}
 			//TODO:: Finish ping
 		}(peerId)
 	}
@@ -108,7 +118,4 @@ func (cm *Consesus) cantPing() bool {
 
 func (cm *Consesus) electionTimeout() time.Duration {
 	return time.Duration(150+rand.Intn(150)) * time.Millisecond
-}
-
-type Server struct {
 }
