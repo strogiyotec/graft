@@ -16,6 +16,16 @@ type Server struct {
 	clients map[int]*rpc.Client
 }
 
+func (server *Server) appendEntriesCall(peerId int, args interface{}, reply interface{}) error {
+	server.mu.Lock()
+	peer := server.clients[peerId]
+	server.mu.Unlock()
+	if peer == nil {
+		return fmt.Errorf("Client %d is closed", peerId)
+	} else {
+		return peer.Call(appendEntriesCall, args, reply)
+	}
+}
 func (server *Server) requestVote(id int, args interface{}, reply interface{}) error {
 	server.mu.Lock()
 	peer := server.clients[id]
@@ -23,6 +33,6 @@ func (server *Server) requestVote(id int, args interface{}, reply interface{}) e
 	if peer == nil {
 		return fmt.Errorf("Client %d is closed", id)
 	} else {
-		return peer.Call(appendEntriesCall, args, reply)
+		return peer.Call(requestVoteCall, args, reply)
 	}
 }

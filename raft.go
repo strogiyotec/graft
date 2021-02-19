@@ -19,6 +19,7 @@ const (
 	Follower State = iota
 	Candidate
 	Leader
+	// apiUrl: 'http://localhost:8080',
 	Dead
 )
 
@@ -37,6 +38,17 @@ type Consesus struct {
 	electionResetEvent time.Time
 	votedFor           int
 	logs               []Logs
+}
+
+type AppendEntriesReply struct {
+	TermId  int
+	Success bool
+}
+
+type AppendEntriesArgs struct {
+	Term     int
+	LeaderId int
+	Entries  []Logs
 }
 
 func (cm *Consesus) runElectionTimer() {
@@ -129,7 +141,28 @@ func (cm *Consesus) ping(term int, currentTerm int) {
 
 //TODO implement
 func (cm *Consesus) sendHeartBeats() {
-
+	cm.mutex.Lock()
+	savedTerm := cm.currentTerm
+	cm.mutex.Unlock()
+	for _, peerId := range cm.peers {
+		args := AppendEntriesArgs{
+			Term:     savedTerm,
+			LeaderId: cm.id,
+		}
+		go func(peerId int) {
+			log.Printf("Sending logs to %d\n", peerId)
+			var reply AppendEntriesReply
+			if err := cm.server.appendEntriesCall(peerId, args, &reply); err == nil {
+				cm.mutex.Lock()
+				defer cm.mutex.Unlock()
+				if reply.TermId > savedTerm {
+					log.Println("term out of date in reply")
+					cm.becomeFollower(reply.TermId)
+					return
+				}
+			}
+		}(peerId)
+	}
 }
 
 func (cm *Consesus) startLeader() {
